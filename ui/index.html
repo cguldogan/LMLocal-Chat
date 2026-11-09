@@ -1,0 +1,586 @@
+<!doctype html>
+<!--
+  LocalLM Chat: a small chat page for the models on your phone.
+
+  One file, no dependencies, used in two places:
+  - Served by the phone itself (Local LM ▸ Settings ▸ Serve to other devices) at http://<phone-ip>:8080/.
+    It talks to the server it was loaded from.
+  - Inside the LocalLM Chat desktop app (this repo). There, requests go through the app's main
+    process (window.lmchat), because a page can't freely call a device on your network.
+
+  The Android app ships a copy at app/src/main/assets/web/index.html. Edit this one and copy it there.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'">
+<meta name="color-scheme" content="dark">
+<title>LocalLM Chat</title>
+<style>
+  :root {
+    --bg0: #0d0f11; --bg1: #13161a; --bg2: #1a1d22; --bg3: #22262d;
+    --border: #2a2f38; --border-light: #353b45;
+    --text0: #e8ecf1; --text1: #b0b8c4; --text2: #727d8e;
+    --accent: #00d67e; --accent-dim: rgba(0, 214, 126, .14);
+    --red: #ff5a5f; --yellow: #ffb547;
+    --radius: 14px;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg0); color: var(--text0);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg1);
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; white-space: nowrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--text2); flex: none; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .dot.off { background: var(--red); }
+  .spacer { flex: 1; }
+  select {
+    min-width: 0; max-width: 46vw; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 10px;
+  }
+  .icon-btn {
+    background: transparent; border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px 10px; color: var(--text1); white-space: nowrap;
+  }
+  .icon-btn:hover { border-color: var(--border-light); color: var(--text0); }
+
+  main { flex: 1; overflow-y: auto; }
+  .column { max-width: 820px; margin: 0 auto; padding: 20px 16px 8px; }
+
+  .empty { text-align: center; color: var(--text2); padding: 12vh 8px 0; }
+  .empty h1 { color: var(--text0); font-size: 22px; font-weight: 600; margin: 0 0 6px; }
+  .empty p { margin: 4px 0; }
+
+  .msg { margin: 0 0 18px; display: flex; }
+  .msg.user { justify-content: flex-end; }
+  .bubble { max-width: 100%; overflow-wrap: anywhere; }
+  .msg.user .bubble {
+    background: var(--bg3); border-radius: var(--radius) var(--radius) 4px var(--radius);
+    padding: 9px 14px; max-width: 85%; white-space: pre-wrap;
+  }
+  .msg.assistant .bubble { width: 100%; }
+  .text p { margin: 0 0 10px; white-space: pre-wrap; }
+  .text p:last-child { margin-bottom: 0; }
+  .text code { font-family: var(--mono); font-size: 13px; background: var(--bg2); padding: 1px 5px; border-radius: 5px; }
+  .text pre {
+    font-family: var(--mono); font-size: 13px; background: var(--bg1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px; overflow-x: auto; margin: 0 0 10px; white-space: pre;
+  }
+  .text pre code { background: none; padding: 0; }
+  details.think {
+    border-left: 2px solid var(--border-light); padding: 2px 0 2px 12px; margin: 0 0 10px; color: var(--text2);
+  }
+  details.think summary { cursor: pointer; font-size: 13px; user-select: none; }
+  details.think div { white-space: pre-wrap; font-size: 14px; margin-top: 6px; }
+  .meta { color: var(--text2); font-size: 12px; margin-top: 6px; }
+  .wait { color: var(--text2); font-size: 14px; }
+  .wait::after { content: "…"; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  .error {
+    color: var(--red); background: rgba(255, 90, 95, .08); border: 1px solid rgba(255, 90, 95, .25);
+    border-radius: 10px; padding: 8px 12px; font-size: 14px; margin-top: 8px;
+  }
+
+  footer { border-top: 1px solid var(--border); background: var(--bg1); padding-bottom: env(safe-area-inset-bottom); }
+  .composer { max-width: 820px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 10px; align-items: flex-end; }
+  textarea {
+    flex: 1; resize: none; max-height: 200px; min-height: 44px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; outline: none;
+  }
+  textarea:focus { border-color: var(--accent); }
+  .send {
+    background: var(--accent); color: #04130c; border: 0; border-radius: 12px;
+    padding: 0 18px; height: 44px; font-weight: 600;
+  }
+  .send.stop { background: var(--bg3); color: var(--text0); border: 1px solid var(--border-light); }
+  .send:disabled { opacity: .45; cursor: default; }
+  .hint { max-width: 820px; margin: -6px auto 0; padding: 0 16px 10px; color: var(--text2); font-size: 12px; }
+
+  dialog {
+    background: var(--bg1); color: var(--text0); border: 1px solid var(--border); border-radius: 16px;
+    padding: 20px; width: min(440px, calc(100vw - 32px));
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
+  dialog h2 { margin: 0 0 6px; font-size: 18px; }
+  dialog p { color: var(--text1); margin: 0 0 14px; font-size: 14px; }
+  label { display: block; font-size: 13px; color: var(--text1); margin: 12px 0 5px; }
+  input[type=text], input[type=password] {
+    width: 100%; background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 12px; outline: none; font-family: var(--mono); font-size: 14px;
+  }
+  input:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .row .send { height: 40px; }
+  .dialog-error { color: var(--red); font-size: 13px; margin-top: 10px; min-height: 1em; }
+  .pair { border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 4px; text-align: center; }
+  .pair .send { width: 100%; height: 42px; }
+  .qr { background: #fff; border-radius: 12px; padding: 10px; width: 220px; height: 220px; margin: 0 auto 12px; }
+  .qr img { width: 100%; height: 100%; display: block; }
+  .pair-steps { font-size: 14px; color: var(--text1); margin: 0 0 8px !important; }
+  .pair-status { font-size: 13px; color: var(--text2); }
+  .pair-status.bad { color: var(--red); }
+  .or { color: var(--text2); font-size: 12px; text-align: center; margin: 14px 0 0; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span id="status" class="dot" title="Not connected"></span>LocalLM Chat</div>
+  <div class="spacer"></div>
+  <select id="model" aria-label="Model" disabled><option>No models</option></select>
+  <button id="newChat" class="icon-btn" title="Start a new chat">New chat</button>
+  <button id="openSettings" class="icon-btn" title="Connection settings">Connect</button>
+</header>
+
+<main id="scroller">
+  <div class="column" id="log">
+    <div class="empty" id="empty">
+      <h1>Chat with the models on your phone</h1>
+      <p>Replies are generated on the phone. Nothing leaves your network.</p>
+      <p id="emptyHint"></p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="composer">
+    <textarea id="input" rows="1" placeholder="Message" aria-label="Message"></textarea>
+    <button id="send" class="send" disabled>Send</button>
+  </div>
+  <div class="hint">Enter to send, Shift+Enter for a new line. The phone answers one request at a time, and its own chats come first.</div>
+</footer>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2>Connect to your phone</h2>
+    <p id="settingsHelp"></p>
+    <div id="pairBlock" hidden>
+      <div class="pair">
+        <button type="button" class="send" id="pairStart">Pair with QR code</button>
+        <div id="pairPanel" hidden>
+          <div class="qr"><img id="qrImage" alt="QR code for pairing"></div>
+          <p class="pair-steps">On your phone, open Local LM ▸ Settings ▸ Serve to other devices, tap <strong>Pair the desktop app</strong> and scan this code.</p>
+          <div class="pair-status" id="pairStatus"></div>
+        </div>
+      </div>
+      <div class="or">or enter the address and key yourself</div>
+    </div>
+    <div id="urlRow">
+      <label for="baseUrl">Phone address</label>
+      <input type="text" id="baseUrl" placeholder="http://192.168.1.5:8080" autocomplete="off" spellcheck="false">
+    </div>
+    <label for="apiKey">API key</label>
+    <input type="password" id="apiKey" placeholder="sk-lm-…" autocomplete="off" spellcheck="false">
+    <div class="dialog-error" id="settingsError"></div>
+    <div class="row">
+      <button type="button" class="icon-btn" id="cancelSettings">Cancel</button>
+      <button type="submit" class="send" id="saveSettings">Connect</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+(() => {
+  // In the desktop app the preload script provides window.lmchat; served by the phone it doesn't exist.
+  const bridge = window.lmchat || null;
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("lmchat." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("lmchat." + k, JSON.stringify(v)); } catch {} },
+  };
+
+  let settings = store.get("settings", { baseUrl: "", key: "" });
+  let messages = store.get("messages", []); // [{role, content, reasoning?, error?}]
+  let models = [];
+  let running = null; // { abort() }
+
+  // A key handed over in the address (#key=…) is saved, then removed from the address bar.
+  if (!bridge && location.hash.startsWith("#key=")) {
+    settings.key = decodeURIComponent(location.hash.slice(5));
+    store.set("settings", settings);
+    history.replaceState(null, "", location.pathname + location.search);
+  }
+
+  const apiBase = () => bridge ? settings.baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/, "") : location.origin;
+
+  /**
+   * One HTTP request. onChunk, when given, receives the body as it streams in.
+   * Resolves to { status, text } (text is the whole body when not streaming).
+   */
+  function request(path, { method = "GET", body, onChunk } = {}) {
+    const headers = {};
+    if (settings.key) headers["Authorization"] = "Bearer " + settings.key;
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const url = apiBase() + path;
+
+    if (bridge) {
+      const call = bridge.request({ url, method, headers, body: payload }, onChunk || null);
+      return { abort: call.abort, done: call.done };
+    }
+    const controller = new AbortController();
+    const done = (async () => {
+      const res = await fetch(url, { method, headers, body: payload, signal: controller.signal, cache: "no-store" });
+      if (!onChunk || !res.ok || !res.body) return { status: res.status, text: await res.text() };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        onChunk(decoder.decode(value, { stream: true }));
+      }
+      return { status: res.status, text: "" };
+    })();
+    return { abort: () => controller.abort(), done };
+  }
+
+  const errorMessage = (text, status) => {
+    try { const m = JSON.parse(text).error.message; if (m) return m; } catch {}
+    return status ? `The phone answered with HTTP ${status}.` : "The phone didn't answer.";
+  };
+
+  // ---- connection ----
+
+  function setStatus(state, title) {
+    $("status").className = "dot" + (state === "on" ? " on" : state === "off" ? " off" : "");
+    $("status").title = title;
+  }
+
+  async function connect() {
+    $("emptyHint").textContent = "";
+    if (bridge && !settings.baseUrl.trim()) {
+      setStatus("", "Not connected");
+      $("emptyHint").textContent = "Click Connect and enter the address shown in Local LM ▸ Settings ▸ Serve to other devices.";
+      openSettings("");
+      return false;
+    }
+    setStatus("", "Connecting…");
+    let res;
+    try {
+      res = await request("/v1/models").done;
+    } catch (e) {
+      setStatus("off", "Can't reach the phone");
+      const msg = bridge
+        ? `Can't reach ${apiBase()}. Check that the phone is serving and on the same network.`
+        : "Can't reach the phone. Check that it's still serving.";
+      $("emptyHint").textContent = msg;
+      if (bridge) openSettings(msg);
+      return false;
+    }
+    if (res.status === 401) {
+      setStatus("off", "API key needed");
+      openSettings(settings.key ? "That key didn't work. Copy the current key from the phone." : "");
+      return false;
+    }
+    if (res.status !== 200) {
+      setStatus("off", "Error");
+      $("emptyHint").textContent = errorMessage(res.text, res.status);
+      return false;
+    }
+    try { models = JSON.parse(res.text).data || []; } catch { models = []; }
+    renderModels();
+    setStatus("on", "Connected to " + (bridge ? apiBase() : "this phone"));
+    if (!models.length) $("emptyHint").textContent = "No models are downloaded on the phone yet. Download one in the app's Device tab.";
+    updateSend();
+    return true;
+  }
+
+  function renderModels() {
+    const sel = $("model");
+    const previous = store.get("model", "");
+    sel.innerHTML = "";
+    for (const m of models) {
+      const o = document.createElement("option");
+      o.value = m.id; o.textContent = m.id;
+      sel.appendChild(o);
+    }
+    if (!models.length) sel.innerHTML = "<option>No models</option>";
+    if (models.some((m) => m.id === previous)) sel.value = previous;
+    sel.disabled = !models.length;
+  }
+
+  function openSettings(error) {
+    $("settingsHelp").textContent = bridge
+      ? "On the phone, open Local LM ▸ Settings ▸ Serve to other devices and turn it on. Then pair with a QR code, or enter the address and key it shows."
+      : "This phone asks for an API key. Copy it from Local LM ▸ Settings ▸ Serve to other devices.";
+    $("urlRow").hidden = !bridge;
+    $("pairBlock").hidden = !canPair;
+    $("baseUrl").value = settings.baseUrl;
+    $("apiKey").value = settings.key;
+    $("settingsError").textContent = error || "";
+    if (!$("settings").open) $("settings").showModal();
+    (bridge && !settings.baseUrl ? $("baseUrl") : $("apiKey")).focus();
+  }
+
+  $("settingsForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    let url = $("baseUrl").value.trim();
+    if (bridge && url && !/^https?:\/\//i.test(url)) url = "http://" + url;
+    if (bridge && url && !/:\d+(\/|$)/.test(url.replace(/^https?:\/\//i, ""))) url += ":8080";
+    settings = { baseUrl: url, key: $("apiKey").value.trim() };
+    store.set("settings", settings);
+    $("saveSettings").disabled = true;
+    const ok = await connect();
+    $("saveSettings").disabled = false;
+    if (ok) $("settings").close();
+  });
+  $("cancelSettings").addEventListener("click", () => $("settings").close());
+
+  // ---- pairing by QR code (desktop app only; see pairing.js) ----
+
+  const canPair = !!(bridge && bridge.pairStart);
+
+  function pairStatus(text, bad) {
+    $("pairStatus").textContent = text;
+    $("pairStatus").className = "pair-status" + (bad ? " bad" : "");
+  }
+
+  function resetPairing() {
+    $("pairPanel").hidden = true;
+    $("pairStart").hidden = false;
+    $("pairStart").textContent = "Pair with QR code";
+  }
+
+  $("pairStart").addEventListener("click", async () => {
+    $("pairStart").disabled = true;
+    try {
+      const { code, svg } = await bridge.pairStart();
+      $("qrImage").src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      $("qrImage").dataset.code = code;
+      $("pairPanel").hidden = false;
+      $("pairStart").hidden = true;
+      pairStatus("Waiting for your phone…");
+    } catch (e) {
+      $("settingsError").textContent = String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, "");
+    } finally {
+      $("pairStart").disabled = false;
+    }
+  });
+
+  if (canPair) {
+    bridge.onPairEvent(async (e) => {
+      if (e.type === "paired") {
+        settings = { baseUrl: e.baseUrl, key: e.key || "" };
+        store.set("settings", settings);
+        pairStatus("Paired with " + e.device + ". Connecting…");
+        const ok = await connect();
+        if (ok && $("settings").open) $("settings").close();
+        if (!ok) { resetPairing(); openSettings("Paired, but couldn't connect. Check the phone is still serving."); }
+      } else if (e.type === "unreachable") {
+        pairStatus(e.message, true);
+      } else if (e.type === "expired") {
+        resetPairing();
+        $("pairStart").textContent = "Show a new code";
+        $("settingsError").textContent = "The code expired. Show a new one to pair.";
+      }
+    });
+    $("settings").addEventListener("close", () => {
+      if (!$("pairPanel").hidden) bridge.pairStop();
+      resetPairing();
+    });
+  }
+  $("openSettings").addEventListener("click", () => openSettings(""));
+  $("model").addEventListener("change", () => store.set("model", $("model").value));
+
+  // ---- rendering ----
+
+  const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  /** Just enough formatting for chat: code blocks, inline code and bold. Everything else stays text. */
+  function formatText(text) {
+    const parts = text.split(/```/);
+    return parts.map((part, i) => {
+      if (i % 2 === 1) {
+        const code = part.replace(/^[\w+-]*\n/, "");
+        return "<pre><code>" + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>";
+      }
+      return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) =>
+        "<p>" + escapeHtml(p)
+          .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>") + "</p>"
+      ).join("");
+    }).join("");
+  }
+
+  function messageNode(m, live) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg " + m.role;
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    if (m.role === "user") {
+      bubble.textContent = m.content;
+    } else {
+      if (m.reasoning) {
+        const d = document.createElement("details");
+        d.className = "think";
+        d.open = live && !m.content;
+        d.innerHTML = "<summary>Thinking</summary>";
+        const body = document.createElement("div");
+        body.textContent = m.reasoning;
+        d.appendChild(body);
+        bubble.appendChild(d);
+      }
+      if (m.content) {
+        const t = document.createElement("div");
+        t.className = "text";
+        t.innerHTML = formatText(m.content);
+        bubble.appendChild(t);
+      } else if (live && !m.reasoning) {
+        const w = document.createElement("div");
+        w.className = "wait";
+        w.textContent = m.waitText || "Waiting for the phone";
+        bubble.appendChild(w);
+      }
+      if (m.error) {
+        const e = document.createElement("div");
+        e.className = "error";
+        e.textContent = m.error;
+        bubble.appendChild(e);
+      }
+      if (m.stopped) {
+        const s = document.createElement("div");
+        s.className = "meta";
+        s.textContent = "Stopped";
+        bubble.appendChild(s);
+      }
+    }
+    wrap.appendChild(bubble);
+    return wrap;
+  }
+
+  function render() {
+    const log = $("log");
+    const nearBottom = $("scroller").scrollHeight - $("scroller").scrollTop - $("scroller").clientHeight < 80;
+    log.querySelectorAll(".msg").forEach((n) => n.remove());
+    $("empty").hidden = messages.length > 0;
+    messages.forEach((m, i) => log.appendChild(messageNode(m, running && i === messages.length - 1)));
+    if (nearBottom) $("scroller").scrollTop = $("scroller").scrollHeight;
+  }
+
+  // ---- sending ----
+
+  function updateSend() {
+    const btn = $("send");
+    if (running) { btn.textContent = "Stop"; btn.className = "send stop"; btn.disabled = false; return; }
+    btn.textContent = "Send"; btn.className = "send";
+    btn.disabled = !$("input").value.trim() || !models.length;
+  }
+
+  async function send() {
+    const text = $("input").value.trim();
+    if (!text || running || !models.length) return;
+    $("input").value = ""; autosize();
+    messages.push({ role: "user", content: text });
+    const reply = { role: "assistant", content: "", reasoning: "" };
+    messages.push(reply);
+
+    const body = { model: $("model").value, messages: recentHistory(messages.slice(0, -1)), stream: true };
+
+    let buffer = "";
+    let failed = null;
+    const onChunk = (chunk) => {
+      buffer += chunk;
+      let cut;
+      while ((cut = buffer.indexOf("\n\n")) >= 0) {
+        const event = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        for (const line of event.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") continue;
+          let json;
+          try { json = JSON.parse(data); } catch { continue; }
+          if (json.error) { failed = json.error.message || "The phone stopped with an error."; continue; }
+          const delta = json.choices && json.choices[0] && json.choices[0].delta;
+          if (!delta) continue;
+          if (delta.reasoning_content) reply.reasoning += delta.reasoning_content;
+          if (delta.content) reply.content += delta.content;
+        }
+      }
+      render();
+    };
+
+    const call = request("/v1/chat/completions", { method: "POST", body, onChunk });
+    let stopped = false;
+    running = { abort: () => { stopped = true; call.abort(); } };
+    updateSend(); render();
+    const slow = setTimeout(() => {
+      if (!reply.content && !reply.reasoning) { reply.waitText = "Waiting for the phone. Loading a model can take a minute"; render(); }
+    }, 4000);
+
+    try {
+      const res = await call.done;
+      if (res.status !== 200) failed = errorMessage(res.text, res.status);
+    } catch (e) {
+      if (!stopped) failed = "Lost the connection to the phone.";
+    }
+    clearTimeout(slow);
+    delete reply.waitText;
+    if (stopped) reply.stopped = true;
+    if (failed) reply.error = failed;
+    if (!reply.content && !reply.reasoning && !reply.error && !stopped) reply.error = "The model returned an empty reply.";
+    running = null;
+    store.set("messages", messages);
+    render(); updateSend();
+    if (res401(failed)) connect();
+    $("input").focus();
+  }
+
+  /**
+   * The newest turns that fit HISTORY_CHARS, oldest first. Phone models have small context
+   * windows (about 2,000 tokens for GGUF), and an overlong prompt loses its beginning, so
+   * older turns are left out rather than sent.
+   */
+  const HISTORY_CHARS = 6000;
+  function recentHistory(all) {
+    const turns = all.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content }));
+    const kept = [];
+    let used = 0;
+    for (let i = turns.length - 1; i >= 0; i--) {
+      used += turns[i].content.length;
+      if (kept.length && used > HISTORY_CHARS) break;
+      kept.unshift(turns[i]);
+    }
+    // A conversation sent to the model starts with the user.
+    while (kept.length > 1 && kept[0].role !== "user") kept.shift();
+    return kept;
+  }
+
+  const res401 = (msg) => typeof msg === "string" && /API key/i.test(msg);
+
+  $("send").addEventListener("click", () => running ? running.abort() : send());
+  $("newChat").addEventListener("click", () => {
+    if (running) running.abort();
+    messages = []; store.set("messages", messages); render(); $("input").focus();
+  });
+
+  function autosize() {
+    const t = $("input");
+    t.style.height = "auto";
+    t.style.height = Math.min(t.scrollHeight, 200) + "px";
+  }
+  $("input").addEventListener("input", () => { autosize(); updateSend(); });
+  $("input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+  });
+
+  render();
+  connect();
+})();
+</script>
+</body>
+</html>

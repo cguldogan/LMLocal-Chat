@@ -1,0 +1,63 @@
+{
+  "name": "lmlocal-chat",
+  "productName": "LocalLM Chat",
+  "version": "0.1.0",
+  "description": "Chat with the on-device models on your phone, from your computer.",
+  "license": "MIT",
+  "main": "main.js",
+  "author": "cguldogan",
+  "homepage": "https://locallm.app",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "app.locallm.chat",
+    "productName": "LocalLM Chat",
+    "artifactName": "LocalLM-Chat-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "main.js",
+      "preload.js",
+      "pairing.js",
+      "ui/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "identity": "-",
+      "hardenedRuntime": false
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "maintainer": "LocalLM <hello@locallm.app>"
+    }
+  },
+  "dependencies": {
+    "qrcode-generator": "2.0.4"
+  }
+}
