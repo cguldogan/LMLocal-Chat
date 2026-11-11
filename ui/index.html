@@ -8,7 +8,8 @@
   - Inside the LocalLM Chat desktop app (this repo). There, requests go through the app's main
     process (window.lmchat), because a page can't freely call a device on your network.
 
-  The Android app ships a copy at app/src/main/assets/web/index.html. Edit this one and copy it there.
+  The Android app ships a copy at app/src/main/assets/web/index.html, and the iOS app one at
+  LMLocal/Resources/web/index.html. Edit this one and copy it to both, byte for byte.
 -->
 <html lang="en">
 <head>
@@ -56,6 +57,9 @@
     padding: 6px 10px; color: var(--text1); white-space: nowrap;
   }
   .icon-btn:hover { border-color: var(--border-light); color: var(--text0); }
+  .icon-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .icon-btn svg { width: 16px; height: 16px; flex: none; }
+  .icon-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--text0); }
 
   main { flex: 1; overflow-y: auto; }
   .column { max-width: 820px; margin: 0 auto; padding: 20px 16px 8px; }
@@ -72,14 +76,45 @@
     padding: 9px 14px; max-width: 85%; white-space: pre-wrap;
   }
   .msg.assistant .bubble { width: 100%; }
-  .text p { margin: 0 0 10px; white-space: pre-wrap; }
-  .text p:last-child { margin-bottom: 0; }
-  .text code { font-family: var(--mono); font-size: 13px; background: var(--bg2); padding: 1px 5px; border-radius: 5px; }
-  .text pre {
-    font-family: var(--mono); font-size: 13px; background: var(--bg1); border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px; overflow-x: auto; margin: 0 0 10px; white-space: pre;
+  /* Replies, rendered from Markdown (see renderMarkdown). */
+  .text > :first-child { margin-top: 0; }
+  .text > :last-child { margin-bottom: 0; }
+  .text p { margin: 0 0 10px; }
+  .text h1, .text h2, .text h3, .text h4, .text h5, .text h6 { margin: 18px 0 8px; line-height: 1.3; font-weight: 650; }
+  .text h1 { font-size: 21px; } .text h2 { font-size: 18px; } .text h3 { font-size: 16px; }
+  .text h4, .text h5, .text h6 { font-size: 15px; color: var(--text1); }
+  .text ul, .text ol { margin: 0 0 10px; padding-left: 24px; }
+  .text li { margin: 3px 0; }
+  .text li > p { margin: 0 0 4px; }
+  .text li > p:last-child { margin-bottom: 0; }
+  .text li > ul, .text li > ol { margin: 4px 0 0; }
+  .text li::marker { color: var(--text2); }
+  .text blockquote { margin: 0 0 10px; padding: 2px 0 2px 14px; border-left: 3px solid var(--border-light); color: var(--text1); }
+  .text hr { border: 0; border-top: 1px solid var(--border); margin: 16px 0; }
+  .text a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .text strong { font-weight: 650; }
+  .text del { color: var(--text2); }
+  .text :not(pre) > code { font-family: var(--mono); font-size: 13px; background: var(--bg2); border: 1px solid var(--border); padding: 0 5px; border-radius: 5px; }
+  .codeblock { margin: 0 0 12px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg1); }
+  .codeblock-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 3px 6px 3px 12px; background: var(--bg2); border-bottom: 1px solid var(--border);
+    font: 12px var(--mono); color: var(--text2);
   }
-  .text pre code { background: none; padding: 0; }
+  .copy-code { background: transparent; border: 1px solid transparent; border-radius: 7px; padding: 2px 9px; font-size: 12px; color: var(--text1); }
+  .copy-code:hover { border-color: var(--border-light); color: var(--text0); }
+  .codeblock pre { margin: 0; padding: 12px; overflow-x: auto; font: 13px/1.5 var(--mono); white-space: pre; overflow-wrap: normal; }
+  .codeblock code { font: inherit; }
+  .table-wrap { overflow-x: auto; margin: 0 0 12px; }
+  .text table { border-collapse: collapse; font-size: 14px; overflow-wrap: normal; }
+  .text th, .text td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .text th { background: var(--bg2); font-weight: 600; }
+  .text tbody tr:nth-child(even) td { background: rgba(255, 255, 255, .02); }
+  .stats {
+    display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 8px;
+    color: var(--text2); font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .stats b { color: var(--text1); font-weight: 500; }
   details.think {
     border-left: 2px solid var(--border-light); padding: 2px 0 2px 12px; margin: 0 0 10px; color: var(--text2);
   }
@@ -133,16 +168,64 @@
   .pair-status { font-size: 13px; color: var(--text2); }
   .pair-status.bad { color: var(--red); }
   .or { color: var(--text2); font-size: 12px; text-align: center; margin: 14px 0 0; }
+
+  /* Phone details panel: a side panel on wide screens, a bottom sheet on narrow ones. */
+  .panel {
+    position: fixed; right: 0; top: var(--header-h, 53px); bottom: 0; width: 330px; z-index: 20;
+    background: var(--bg1); border-left: 1px solid var(--border); display: flex; flex-direction: column;
+  }
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+  .panel-head h2 { font-size: 16px; margin: 0; flex: 1; }
+  .panel-body { overflow-y: auto; padding: 0 16px 16px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .card h3 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text2); margin: 0 0 8px; font-weight: 600; }
+  .card .big { font-size: 19px; font-weight: 650; line-height: 1.25; }
+  .card .sub { color: var(--text2); font-size: 13px; margin-top: 2px; }
+  .kv { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; padding: 3px 0; }
+  .kv > span:first-child { color: var(--text2); white-space: nowrap; }
+  .kv > span:last-child { text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+  .bar { height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .bar i.warn { background: var(--yellow); }
+  .bar i.bad { background: var(--red); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--text2); }
+  .pill.ok::before { background: var(--accent); }
+  .pill.warn::before { background: var(--yellow); }
+  .pill.bad::before { background: var(--red); }
+  .panel-note { color: var(--text2); font-size: 13px; margin: 4px 0 10px; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 19; }
+  @media (min-width: 641px) { .backdrop { display: none; } }
+  @media (min-width: 900px) { body.panel-open main, body.panel-open footer { margin-right: 330px; } }
+  @media (max-width: 640px) {
+    .panel {
+      top: auto; left: 0; width: auto; max-height: 78vh; border-left: 0; border-top: 1px solid var(--border);
+      border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -20px 50px rgba(0, 0, 0, .5);
+    }
+    .brand-name, .icon-btn .label { display: none; }
+    header { gap: 8px; padding-left: 12px; padding-right: 12px; }
+    select { max-width: 52vw; }
+  }
+  /* Where the model's view of the chat begins, when older messages were left out. */
+  .ctx-divider { display: flex; align-items: center; gap: 10px; color: var(--text2); font-size: 12px; margin: 4px 0 16px; text-align: center; }
+  .ctx-divider::before, .ctx-divider::after { content: ""; flex: 1; height: 1px; background: var(--border-light); }
+  .ctl { margin: 8px 0 2px; }
+  .ctl label { margin: 0 0 5px; font-size: 13px; }
+  .ctl select { max-width: none; width: 100%; }
+  .ctl-turns { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; color: var(--text1); }
+  .ctl-turns input { width: 72px; background: var(--bg1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; color: var(--text0); outline: none; }
+  .ctl-turns input:focus { border-color: var(--accent); }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand"><span id="status" class="dot" title="Not connected"></span>LocalLM Chat</div>
+  <div class="brand"><span id="status" class="dot" title="Not connected"></span><span class="brand-name">LocalLM Chat</span></div>
   <div class="spacer"></div>
   <select id="model" aria-label="Model" disabled><option>No models</option></select>
-  <button id="newChat" class="icon-btn" title="Start a new chat">New chat</button>
-  <button id="openSettings" class="icon-btn" title="Connection settings">Connect</button>
+  <button id="newChat" class="icon-btn" title="Start a new chat" aria-label="New chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="label">New chat</span></button>
+  <button id="phoneBtn" class="icon-btn" title="Phone details and stats" aria-label="Phone details" aria-pressed="false" aria-controls="devicePanel" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><span class="label">Phone</span></button>
+  <button id="openSettings" class="icon-btn" title="Connection settings" aria-label="Connect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="label">Connect</span></button>
 </header>
 
 <main id="scroller">
@@ -162,6 +245,32 @@
   </div>
   <div class="hint">Enter to send, Shift+Enter for a new line. The phone answers one request at a time, and its own chats come first.</div>
 </footer>
+
+<div class="backdrop" id="panelBackdrop" hidden></div>
+<aside class="panel" id="devicePanel" aria-labelledby="deviceTitle" hidden>
+  <div class="panel-head">
+    <h2 id="deviceTitle">Your phone</h2>
+    <button type="button" class="icon-btn" id="closePanel" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="panel-body">
+    <div id="deviceBody"></div>
+    <div class="card" id="ctxCard">
+      <h3>Context</h3>
+      <div id="ctxInfo"></div>
+      <div class="ctl">
+        <label for="ctxMode">What the model sees</label>
+        <select id="ctxMode">
+          <option value="fit">The whole chat, fitted by the phone</option>
+          <option value="turns">Only the last few turns</option>
+        </select>
+        <div class="ctl-turns" id="ctxTurnsRow" hidden>
+          <input type="number" id="ctxTurns" min="1" max="50" step="1" aria-label="Turns to send"> <span>turns (your message and its reply)</span>
+        </div>
+      </div>
+      <p class="panel-note" id="ctxNote"></p>
+    </div>
+  </div>
+</aside>
 
 <dialog id="settings">
   <form method="dialog" id="settingsForm">
@@ -207,6 +316,10 @@
   let messages = store.get("messages", []); // [{role, content, reasoning?, error?}]
   let models = [];
   let running = null; // { abort() }
+  // What to send: "fit" sends the whole chat and the phone leaves out the oldest messages that
+  // don't fit the model's window; "turns" sends only the last N user turns, like the phone's
+  // own Sliding Window setting.
+  let ctxPrefs = Object.assign({ mode: "fit", turns: 10 }, store.get("context", {}));
 
   // A key handed over in the address (#key=…) is saved, then removed from the address bar.
   if (!bridge && location.hash.startsWith("#key=")) {
@@ -294,6 +407,9 @@
     try { models = JSON.parse(res.text).data || []; } catch { models = []; }
     renderModels();
     setStatus("on", "Connected to " + (bridge ? apiBase() : "this phone"));
+    $("phoneBtn").hidden = false;
+    setHeaderHeight();
+    if (panelOpen()) loadDevice();
     if (!models.length) $("emptyHint").textContent = "No models are downloaded on the phone yet. Download one in the app's Device tab.";
     updateSend();
     return true;
@@ -311,6 +427,7 @@
     if (!models.length) sel.innerHTML = "<option>No models</option>";
     if (models.some((m) => m.id === previous)) sel.value = previous;
     sel.disabled = !models.length;
+    renderContext();
   }
 
   function openSettings(error) {
@@ -400,21 +517,196 @@
 
   const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  /** Just enough formatting for chat: code blocks, inline code and bold. Everything else stays text. */
-  function formatText(text) {
-    const parts = text.split(/```/);
-    return parts.map((part, i) => {
-      if (i % 2 === 1) {
-        const code = part.replace(/^[\w+-]*\n/, "");
-        return "<pre><code>" + escapeHtml(code.replace(/\n$/, "")) + "</code></pre>";
-      }
-      return part.split(/\n{2,}/).filter((p) => p.trim()).map((p) =>
-        "<p>" + escapeHtml(p)
-          .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-          .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>") + "</p>"
-      ).join("");
-    }).join("");
+  /*
+   * Markdown for replies. Small and strict: every piece of the model's text is escaped, and the
+   * only HTML on the page is what this code writes. Copes with half-written Markdown while a
+   * reply streams in (an unclosed ``` fence shows as code until it closes).
+   */
+  let slots = [];
+  const keep = (html) => "\u0000" + (slots.push(html) - 1) + "\u0001";
+  const restore = (html) => {
+    for (let k = 0; k < 5 && html.indexOf("\u0000") >= 0; k++) html = html.replace(/\u0000(\d+)\u0001/g, (_, n) => slots[+n] || "");
+    return html;
+  };
+
+  function renderMarkdown(src) {
+    slots = [];
+    const lines = src.replace(/[\u0000\u0001]/g, "").replace(/\r\n?/g, "\n").replace(/\t/g, "    ").split("\n");
+    return restore(blocks(lines));
   }
+
+  const FENCE = /^( {0,3})(`{3,}|~{3,})\s*([^`\s]*)[^`]*$/;
+  const HEADING = /^ {0,3}(#{1,6})(?:\s+(.*?))?\s*#*\s*$/;
+  const HR = /^ {0,3}([-*_])(?: *\1){2,} *$/;
+  const QUOTE = /^ {0,3}> ?(.*)$/;
+  const LIST = /^( *)([-*+]|\d{1,9}[.)])( +|$)(.*)$/;
+  const TABLE_SEP = /^ *\|? *:?-+:? *(\| *:?-+:? *)*\|? *$/;
+  const lead = (line) => line.match(/^ */)[0].length;
+  const isTable = (lines, i) => lines[i].includes("|") && i + 1 < lines.length && lines[i + 1].includes("|") && TABLE_SEP.test(lines[i + 1]);
+  const startsBlock = (lines, i) => {
+    const line = lines[i];
+    return FENCE.test(line) || HEADING.test(line) || HR.test(line) || QUOTE.test(line) || LIST.test(line) || isTable(lines, i);
+  };
+
+  function blocks(lines) {
+    let html = "";
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      let m;
+      if (!line.trim()) { i++; continue; }
+      if ((m = FENCE.exec(line))) {
+        const indent = m[1].length, fence = m[2], lang = m[3];
+        const close = new RegExp("^ {0,3}" + (fence[0] === "`" ? "`" : "~") + "{" + fence.length + ",}\\s*$");
+        const body = [];
+        i++;
+        while (i < lines.length && !close.test(lines[i])) { body.push(lines[i].slice(Math.min(indent, lead(lines[i])))); i++; }
+        i++; // the closing fence, or past the end while it's still streaming
+        html += codeBlock(body.join("\n").replace(/\n+$/, ""), lang);
+      } else if ((m = HEADING.exec(line))) {
+        const n = m[1].length;
+        html += `<h${n}>${inline(m[2] || "")}</h${n}>`;
+        i++;
+      } else if (HR.test(line)) {
+        html += "<hr>";
+        i++;
+      } else if (QUOTE.test(line)) {
+        const inner = [];
+        while (i < lines.length && (m = QUOTE.exec(lines[i]))) { inner.push(m[1]); i++; }
+        html += `<blockquote>${blocks(inner)}</blockquote>`;
+      } else if (LIST.test(line)) {
+        const [h, next] = list(lines, i);
+        html += h;
+        i = next;
+      } else if (isTable(lines, i)) {
+        const head = cells(lines[i]);
+        const align = cells(lines[i + 1]).map((c) => c.startsWith(":") && c.endsWith(":") ? "center" : c.endsWith(":") ? "right" : "");
+        i += 2;
+        const rows = [];
+        while (i < lines.length && lines[i].trim() && lines[i].includes("|")) { rows.push(cells(lines[i])); i++; }
+        const cell = (tag, text, k) => `<${tag}${align[k] ? ` style="text-align:${align[k]}"` : ""}>${inline(text || "")}</${tag}>`;
+        html += '<div class="table-wrap"><table><thead><tr>' + head.map((c, k) => cell("th", c, k)).join("") + "</tr></thead><tbody>" +
+          rows.map((r) => "<tr>" + head.map((_, k) => cell("td", r[k], k)).join("") + "</tr>").join("") + "</tbody></table></div>";
+      } else {
+        const para = [line.trim()];
+        i++;
+        while (i < lines.length && lines[i].trim() && !startsBlock(lines, i)) { para.push(lines[i].trim()); i++; }
+        html += `<p>${inline(para.join("\n"))}</p>`;
+      }
+    }
+    return html;
+  }
+
+  /** A list starting at lines[i], with nested lists in its items. Returns [html, next line]. */
+  function list(lines, i) {
+    const first = LIST.exec(lines[i]);
+    const indent = first[1].length;
+    const ordered = /\d/.test(first[2]);
+    const start = ordered ? parseInt(first[2], 10) : 1;
+    const items = [];
+    let item = null;
+    while (i < lines.length) {
+      const line = lines[i];
+      const m = LIST.exec(line);
+      if (m && m[1].length <= indent + 1 && !HR.test(line)) {
+        if (m[1].length < indent || /\d/.test(m[2]) !== ordered) break;
+        item = { lines: [m[4]], contentIndent: m[1].length + m[2].length + (m[3].length > 4 || !m[3].length ? 1 : m[3].length) };
+        items.push(item);
+        i++;
+        continue;
+      }
+      if (!line.trim()) {
+        // A blank line ends the list unless more of it follows.
+        let j = i + 1;
+        while (j < lines.length && !lines[j].trim()) j++;
+        const nm = j < lines.length ? LIST.exec(lines[j]) : null;
+        if (j < lines.length && (lead(lines[j]) > indent || (nm && nm[1].length <= indent + 1 && /\d/.test(nm[2]) === ordered))) {
+          item.lines.push("");
+          i++;
+          continue;
+        }
+        break;
+      }
+      if (lead(line) > indent) { item.lines.push(line.slice(Math.min(lead(line), item.contentIndent))); i++; continue; }
+      // A line that just carries on the item's text.
+      if (item.lines[item.lines.length - 1].trim() && !startsBlock(lines, i)) { item.lines.push(line.trim()); i++; continue; }
+      break;
+    }
+    const tag = ordered ? "ol" : "ul";
+    const attr = ordered && start !== 1 ? ` start="${start}"` : "";
+    return [`<${tag}${attr}>` + items.map((it) => `<li>${blocks(it.lines)}</li>`).join("") + `</${tag}>`, i];
+  }
+
+  function cells(row) {
+    let t = row.trim().replace(/\\\|/g, "\u0002");
+    if (t.startsWith("|")) t = t.slice(1);
+    if (t.endsWith("|")) t = t.slice(0, -1);
+    return t.split("|").map((c) => c.trim().replace(/\u0002/g, "|"));
+  }
+
+  function codeBlock(code, lang) {
+    const label = (lang || "").replace(/[^\w+#.-]/g, "").slice(0, 24) || "code";
+    return '<div class="codeblock"><div class="codeblock-head"><span>' + escapeHtml(label) +
+      '</span><button type="button" class="copy-code">Copy</button></div><pre><code>' + escapeHtml(code) + "</code></pre></div>";
+  }
+
+  const anchor = (url, html) => `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+
+  /** Inline Markdown: code, links, bold, italic, strikethrough and line breaks. */
+  function inline(src, links = true) {
+    let s = src;
+    s = s.replace(/(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g, (_, ticks, code) =>
+      keep("<code>" + escapeHtml(code.length > 2 && code[0] === " " && code.endsWith(" ") ? code.slice(1, -1) : code) + "</code>"));
+    s = s.replace(/\\([\\`*_{}\[\]()#+\-.!|~>])/g, (_, c) => keep(escapeHtml(c)));
+    if (links) {
+      s = s.replace(/\[([^\]\n]+)\]\(\s*<?(https?:\/\/[^\s)>]+)>?(?:\s+"[^"\n]*")?\s*\)/g, (_, text, url) => keep(anchor(url, inline(text, false))));
+      s = s.replace(/<(https?:\/\/[^\s>]+)>/g, (_, url) => keep(anchor(url, escapeHtml(url))));
+      s = s.replace(/\bhttps?:\/\/[^\s<>"'`\u0000]+/g, (url) => {
+        const trail = (url.match(/[).,;:!?\]*_]+$/) || [""])[0];
+        url = url.slice(0, url.length - trail.length);
+        return keep(anchor(url, escapeHtml(url))) + trail;
+      });
+    }
+    s = escapeHtml(s)
+      .replace(/\*\*(?=\S)([\s\S]*?\S)\*\*/g, "<strong>$1</strong>")
+      .replace(/(^|[^\w])__(?=\S)([\s\S]*?\S)__(?!\w)/g, "$1<strong>$2</strong>")
+      .replace(/~~(?=\S)([\s\S]*?\S)~~/g, "<del>$1</del>")
+      .replace(/(^|[^\w*])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![\w*])/g, "$1<em>$2</em>")
+      .replace(/(^|[^\w])_(?=[^\s_])([^_\n]*?[^\s_])_(?!\w)/g, "$1<em>$2</em>")
+      .replace(/\n/g, "<br>");
+    return s;
+  }
+
+  // ---- stats ----
+
+  const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+  const fmtSeconds = (ms) => ms < 1000 ? (ms / 1000).toFixed(2) + " s" : ms < 60000 ? (ms / 1000).toFixed(1) + " s" : Math.floor(ms / 60000) + " min " + Math.round((ms % 60000) / 1000) + " s";
+
+  /** The line under a reply: model, tokens, speed, time to first token, total time. */
+  function statsNode(st) {
+    const line = document.createElement("div");
+    line.className = "stats";
+    const add = (value, label, title) => {
+      const span = document.createElement("span");
+      if (value != null) { const b = document.createElement("b"); b.textContent = value; span.appendChild(b); span.append(" "); }
+      span.append(label);
+      if (title) span.title = title;
+      line.appendChild(span);
+    };
+    if (st.model) add(null, st.model);
+    if (st.out) add((st.exact ? "" : "≈") + st.out, st.out === 1 ? "token" : "tokens", st.prompt ? `Prompt: ${st.prompt} tokens` : (st.exact ? "" : "Counted as the reply streamed in"));
+    if (st.tps) add(st.tps.toFixed(1), "tok/s", st.tpsFromPhone ? "Measured by the phone" : "Measured in this window");
+    if (st.ctxWindow && st.ctxUsed) add((st.ctxExact ? "" : "≈") + fmtInt(st.ctxUsed) + " / " + fmtInt(st.ctxWindow), "context",
+      (st.ctxExact ? "Prompt tokens" : "Prompt tokens, as the phone estimated them") + " out of the model's context window" +
+      (st.ctxDropped ? `. ${st.ctxDropped} older ${st.ctxDropped === 1 ? "message was" : "messages were"} left out to fit.` : ""));
+    if (st.ttftMs != null) add(fmtSeconds(st.ttftMs), "to first token", st.ttftFromPhone ? "Measured by the phone, once the model was loaded" : "Includes waiting for the phone and loading the model");
+    if (st.totalMs != null) add(fmtSeconds(st.totalMs), st.live ? "so far" : "total");
+    return line;
+  }
+
+  // ---- messages ----
+
+  const thinkOpen = new WeakMap(); // whether you opened or closed a reply's Thinking section
 
   function messageNode(m, live) {
     const wrap = document.createElement("div");
@@ -427,8 +719,9 @@
       if (m.reasoning) {
         const d = document.createElement("details");
         d.className = "think";
-        d.open = live && !m.content;
+        d.open = thinkOpen.has(m) ? thinkOpen.get(m) : (live && !m.content);
         d.innerHTML = "<summary>Thinking</summary>";
+        d.addEventListener("toggle", () => thinkOpen.set(m, d.open));
         const body = document.createElement("div");
         body.textContent = m.reasoning;
         d.appendChild(body);
@@ -437,7 +730,7 @@
       if (m.content) {
         const t = document.createElement("div");
         t.className = "text";
-        t.innerHTML = formatText(m.content);
+        t.innerHTML = renderMarkdown(m.content);
         bubble.appendChild(t);
       } else if (live && !m.reasoning) {
         const w = document.createElement("div");
@@ -457,18 +750,220 @@
         s.textContent = "Stopped";
         bubble.appendChild(s);
       }
+      const st = live ? m.live : m.stats;
+      if (st && st.out) bubble.appendChild(statsNode(st));
     }
     wrap.appendChild(bubble);
     return wrap;
   }
 
+  const nearBottom = () => $("scroller").scrollHeight - $("scroller").scrollTop - $("scroller").clientHeight < 80;
+
   function render() {
     const log = $("log");
-    const nearBottom = $("scroller").scrollHeight - $("scroller").scrollTop - $("scroller").clientHeight < 80;
-    log.querySelectorAll(".msg").forEach((n) => n.remove());
+    const stick = nearBottom();
+    log.querySelectorAll(".msg, .ctx-divider").forEach((n) => n.remove());
     $("empty").hidden = messages.length > 0;
-    messages.forEach((m, i) => log.appendChild(messageNode(m, running && i === messages.length - 1)));
-    if (nearBottom) $("scroller").scrollTop = $("scroller").scrollHeight;
+    const from = contextStart();
+    messages.forEach((m, i) => {
+      if (i === from) {
+        const d = el("div", "ctx-divider", "The model can't see messages above this line");
+        d.title = "The chat is longer than the model's context window, so the oldest messages weren't sent with your last message.";
+        log.appendChild(d);
+      }
+      log.appendChild(messageNode(m, running && i === messages.length - 1));
+    });
+    if (stick) $("scroller").scrollTop = $("scroller").scrollHeight;
+  }
+
+  /** While a reply streams in, redraws only that reply, at most once a frame. */
+  let frame = 0;
+  function renderLiveSoon() {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const nodes = $("log").querySelectorAll(".msg");
+      if (nodes.length !== messages.length || !messages.length) return render();
+      const stick = nearBottom();
+      nodes[nodes.length - 1].replaceWith(messageNode(messages[messages.length - 1], !!running));
+      if (stick) $("scroller").scrollTop = $("scroller").scrollHeight;
+    });
+  }
+
+  async function copyText(text) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
+    } catch {}
+    // Served over plain HTTP the clipboard API isn't there, so copy the old way.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch {}
+    ta.remove();
+    return ok;
+  }
+
+  $("log").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".copy-code");
+    if (!btn) return;
+    const code = btn.closest(".codeblock").querySelector("code").textContent;
+    btn.textContent = (await copyText(code)) ? "Copied" : "Couldn't copy";
+    setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+  });
+
+  // ---- phone details ----
+
+  let panelTimer = null;
+  const panelOpen = () => !$("devicePanel").hidden;
+
+  function setHeaderHeight() {
+    document.documentElement.style.setProperty("--header-h", document.querySelector("header").offsetHeight + "px");
+  }
+  window.addEventListener("resize", setHeaderHeight);
+
+  function openPanel() {
+    setHeaderHeight();
+    $("devicePanel").hidden = false;
+    $("panelBackdrop").hidden = false;
+    document.body.classList.add("panel-open");
+    $("phoneBtn").setAttribute("aria-pressed", "true");
+    if (!$("deviceBody").childElementCount) panelNote("Loading…");
+    loadDevice();
+    clearInterval(panelTimer);
+    panelTimer = setInterval(() => { if (!document.hidden) loadDevice(); }, 10000);
+  }
+
+  function closePanel() {
+    $("devicePanel").hidden = true;
+    $("panelBackdrop").hidden = true;
+    document.body.classList.remove("panel-open");
+    $("phoneBtn").setAttribute("aria-pressed", "false");
+    clearInterval(panelTimer);
+    panelTimer = null;
+  }
+
+  $("phoneBtn").addEventListener("click", () => panelOpen() ? closePanel() : openPanel());
+  $("closePanel").addEventListener("click", closePanel);
+  $("panelBackdrop").addEventListener("click", closePanel);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && panelOpen() && !$("settings").open) closePanel(); });
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function panelNote(text) {
+    const body = $("deviceBody");
+    body.textContent = "";
+    body.appendChild(el("p", "panel-note", text));
+    body.appendChild(sessionCard());
+  }
+
+  async function loadDevice() {
+    let res;
+    try { res = await request("/v1/device").done; } catch { return panelNote("Can't reach the phone. Check that it's still serving."); }
+    if (!panelOpen()) return;
+    if (res.status === 404) return panelNote("Update LocalLM on your phone to see its details here.");
+    if (res.status === 401) return panelNote("The phone refused the API key. Click Connect to enter the current one.");
+    if (res.status !== 200) return panelNote(errorMessage(res.text, res.status));
+    let d;
+    try { d = JSON.parse(res.text); } catch { return panelNote("The phone sent something this page can't read."); }
+    renderDevice(d);
+  }
+
+  const gb = (bytes) => (bytes / 1073741824).toFixed(bytes >= 10737418240 ? 0 : 1) + " GB";
+  const capitalize = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : "";
+  const fmtUptime = (sec) => sec < 60 ? sec + " s" : sec < 3600 ? Math.floor(sec / 60) + " min" : Math.floor(sec / 3600) + " h " + Math.floor((sec % 3600) / 60) + " min";
+  const THERMAL = {
+    none: ["Normal", "ok"], light: ["Warm", "ok"], moderate: ["Warm, may slow down", "warn"], severe: ["Hot, slowing down", "warn"],
+    critical: ["Very hot", "bad"], emergency: ["Overheating", "bad"], shutdown: ["Overheating", "bad"],
+  };
+
+  function kv(card, label, value, cls) {
+    const row = el("div", "kv");
+    row.appendChild(el("span", null, label));
+    row.appendChild(el("span", cls || null, value));
+    card.appendChild(row);
+  }
+
+  function bar(card, fraction, level) {
+    const b = el("div", "bar");
+    const fill = el("i", level || null);
+    fill.style.width = Math.max(0, Math.min(100, fraction * 100)).toFixed(1) + "%";
+    b.appendChild(fill);
+    card.appendChild(b);
+  }
+
+  function renderDevice(d) {
+    const body = $("deviceBody");
+    body.textContent = "";
+    const server = d.server || {};
+
+    const id = el("div", "card");
+    id.appendChild(el("div", "big", [capitalize(d.manufacturer), d.model].filter(Boolean).join(" ") || "Your phone"));
+    // iPhones send "os":"ios" and "ios":"<version>"; Android phones send "android":"<version>".
+    const os = d.ios ? "iOS " + d.ios : d.android ? "Android " + d.android : null;
+    id.appendChild(el("div", "sub", [os, d.soc].filter(Boolean).join(" · ")));
+    body.appendChild(id);
+
+    const now = el("div", "card");
+    now.appendChild(el("h3", null, "Right now"));
+    kv(now, "Status", server.busy ? "Answering" : "Ready", "pill " + (server.busy ? "warn" : "ok"));
+    kv(now, "Model in memory", d.loaded_model || "None");
+    if (server.requests_served != null) kv(now, "Requests served", String(server.requests_served));
+    if (server.uptime_seconds != null) kv(now, "Serving for", fmtUptime(server.uptime_seconds));
+    body.appendChild(now);
+
+    const power = el("div", "card");
+    power.appendChild(el("h3", null, "Battery and heat"));
+    const battery = d.battery || {};
+    if (battery.percent != null) {
+      kv(power, "Battery", battery.percent + "%" + (battery.charging ? " · charging" : ""));
+      bar(power, battery.percent / 100, battery.percent <= 15 && !battery.charging ? "bad" : battery.percent <= 30 && !battery.charging ? "warn" : null);
+    }
+    if (d.thermal) {
+      const [label, level] = THERMAL[d.thermal] || [capitalize(d.thermal), ""];
+      kv(power, "Temperature", label, "pill " + level);
+    }
+    if (power.childElementCount > 1) body.appendChild(power);
+
+    const mem = d.memory || {};
+    if (mem.total_bytes) {
+      const card = el("div", "card");
+      card.appendChild(el("h3", null, "Memory"));
+      if (mem.available_bytes != null) {
+        const used = mem.total_bytes - mem.available_bytes;
+        kv(card, "In use", gb(used) + " of " + gb(mem.total_bytes));
+        bar(card, used / mem.total_bytes, used / mem.total_bytes > 0.9 ? "warn" : null);
+        kv(card, "Free", gb(mem.available_bytes));
+      } else {
+        kv(card, "Total", gb(mem.total_bytes));
+      }
+      body.appendChild(card);
+    }
+
+    body.appendChild(sessionCard());
+    body.appendChild(el("p", "panel-note", "Updates every 10 seconds while this panel is open."));
+  }
+
+  /** Totals for the chat on screen, from the stats under each reply. */
+  function sessionCard() {
+    const card = el("div", "card");
+    card.appendChild(el("h3", null, "This chat"));
+    const replies = messages.filter((m) => m.role === "assistant" && m.stats && m.stats.out);
+    const tokens = replies.reduce((n, m) => n + m.stats.out, 0);
+    const speeds = replies.map((m) => m.stats.tps).filter(Boolean);
+    kv(card, "Replies", String(replies.length));
+    kv(card, "Tokens generated", String(tokens));
+    if (speeds.length) kv(card, "Average speed", (speeds.reduce((a, b) => a + b, 0) / speeds.length).toFixed(1) + " tok/s");
+    kv(card, "Connected to", bridge ? apiBase().replace(/^https?:\/\//, "") : location.host);
+    return card;
   }
 
   // ---- sending ----
@@ -488,7 +983,21 @@
     const reply = { role: "assistant", content: "", reasoning: "" };
     messages.push(reply);
 
-    const body = { model: $("model").value, messages: recentHistory(messages.slice(0, -1)), stream: true };
+    const model = $("model").value;
+    const sent = historyToSend(messages.slice(0, -1), model);
+    // include_usage asks the phone for token counts (and its own timings) at the end of the stream.
+    const body = { model, messages: sent.map(({ role, content }) => ({ role, content })), stream: true, stream_options: { include_usage: true } };
+
+    const t0 = performance.now();
+    let tFirst = null, pieces = 0, usage = null, timings = null, context = null;
+    const liveStats = () => {
+      const now = performance.now();
+      reply.live = {
+        model, out: pieces, exact: false, totalMs: now - t0, live: true,
+        tps: tFirst != null && pieces > 1 && now - tFirst > 300 ? (pieces - 1) / ((now - tFirst) / 1000) : null,
+        ttftMs: tFirst != null ? tFirst - t0 : null,
+      };
+    };
 
     let buffer = "";
     let failed = null;
@@ -504,14 +1013,22 @@
           if (!data || data === "[DONE]") continue;
           let json;
           try { json = JSON.parse(data); } catch { continue; }
-          if (json.error) { failed = json.error.message || "The phone stopped with an error."; continue; }
+          if (json.error) { failed = failureText(json.error, model); continue; }
+          if (json.usage) usage = json.usage;
+          if (json.timings) timings = json.timings;
+          if (json.context) context = json.context;
           const delta = json.choices && json.choices[0] && json.choices[0].delta;
           if (!delta) continue;
+          if (delta.reasoning_content || delta.content) {
+            if (tFirst == null) tFirst = performance.now();
+            pieces++;
+          }
           if (delta.reasoning_content) reply.reasoning += delta.reasoning_content;
           if (delta.content) reply.content += delta.content;
         }
       }
-      render();
+      liveStats();
+      renderLiveSoon();
     };
 
     const call = request("/v1/chat/completions", { method: "POST", body, onChunk });
@@ -524,35 +1041,80 @@
 
     try {
       const res = await call.done;
-      if (res.status !== 200) failed = errorMessage(res.text, res.status);
+      if (res.status !== 200) {
+        let err = null;
+        try { err = JSON.parse(res.text).error; } catch {}
+        failed = err ? failureText(err, model) : errorMessage(res.text, res.status);
+      }
     } catch (e) {
       if (!stopped) failed = "Lost the connection to the phone.";
     }
     clearTimeout(slow);
     delete reply.waitText;
+    delete reply.live;
+    const stats = finalStats({ model, t0, tFirst, tEnd: performance.now(), pieces, usage, timings, context });
+    if (stats && (reply.content || reply.reasoning)) reply.stats = stats;
+    // The first message the model saw: the phone's dropped messages come off the front of what was sent.
+    const firstSeen = sent[(context && context.dropped_messages) || 0];
+    if (firstSeen && !failed) reply.contextFrom = firstSeen.index;
     if (stopped) reply.stopped = true;
     if (failed) reply.error = failed;
     if (!reply.content && !reply.reasoning && !reply.error && !stopped) reply.error = "The model returned an empty reply.";
     running = null;
     store.set("messages", messages);
-    render(); updateSend();
+    render(); updateSend(); renderContext();
     if (res401(failed)) connect();
     $("input").focus();
   }
 
   /**
-   * The newest turns that fit HISTORY_CHARS, oldest first. Phone models have small context
-   * windows (about 2,000 tokens for GGUF), and an overlong prompt loses its beginning, so
-   * older turns are left out rather than sent.
+   * Stats for a finished reply. The phone's numbers win: usage (exact token counts) and timings
+   * (llama.cpp models measure speed and time to first token). Otherwise they're measured here.
    */
-  const HISTORY_CHARS = 6000;
-  function recentHistory(all) {
-    const turns = all.filter((m) => m.content).map((m) => ({ role: m.role, content: m.content }));
+  function finalStats({ model, t0, tFirst, tEnd, pieces, usage, timings, context }) {
+    const exact = !!(usage && usage.completion_tokens > 0);
+    const out = exact ? usage.completion_tokens : pieces;
+    if (!out) return null;
+    const phoneTps = timings && timings.tokens_per_second > 0 ? timings.tokens_per_second : null;
+    const genSeconds = tFirst != null ? (tEnd - tFirst) / 1000 : 0;
+    const phoneTtft = timings && timings.ttft_ms != null ? timings.ttft_ms : null;
+    return {
+      model, out, exact,
+      prompt: usage && usage.prompt_tokens > 0 ? usage.prompt_tokens : null,
+      tps: phoneTps || (out > 1 && genSeconds > 0.05 ? (out - 1) / genSeconds : null),
+      tpsFromPhone: !!phoneTps,
+      ttftMs: phoneTtft != null ? phoneTtft : tFirst != null ? tFirst - t0 : null,
+      ttftFromPhone: phoneTtft != null,
+      totalMs: tEnd - t0,
+      // How full the window was: llama.cpp models count prompt tokens exactly, others are estimated.
+      ctxWindow: context && context.window || null,
+      ctxUsed: usage && usage.prompt_tokens > 0 ? usage.prompt_tokens : context && context.estimated_prompt_tokens || null,
+      ctxExact: !!(usage && usage.prompt_tokens > 0),
+      ctxDropped: context && context.dropped_messages || 0,
+    };
+  }
+
+  /**
+   * The messages to send, oldest first, each with its index in the chat. Phone models have small
+   * context windows. A phone that reports its models' windows (context_length) fits the chat
+   * itself, leaving out the oldest whole messages, so "fit" sends the chat as it is, up to a
+   * sanity cap. An older phone doesn't, and cuts an overlong prompt off at the start, so for it
+   * the page keeps to LEGACY_CHARS as before. "turns" sends only the last ctxPrefs.turns turns.
+   */
+  const SEND_CAP_CHARS = 120000;
+  const LEGACY_CHARS = 6000;
+  function historyToSend(all, modelId) {
+    const turns = [];
+    all.forEach((m, index) => { if (m.content) turns.push({ role: m.role, content: m.content, index }); });
+    const model = models.find((m) => m.id === modelId);
+    const cap = ctxPrefs.mode === "turns" || (model && model.context_length) ? SEND_CAP_CHARS : LEGACY_CHARS;
+    const maxUsers = ctxPrefs.mode === "turns" ? Math.max(1, ctxPrefs.turns | 0) : Infinity;
     const kept = [];
-    let used = 0;
+    let used = 0, users = 0;
     for (let i = turns.length - 1; i >= 0; i--) {
       used += turns[i].content.length;
-      if (kept.length && used > HISTORY_CHARS) break;
+      if (kept.length && used > cap) break;
+      if (turns[i].role === "user" && ++users > maxUsers) break;
       kept.unshift(turns[i]);
     }
     // A conversation sent to the model starts with the user.
@@ -560,12 +1122,67 @@
     return kept;
   }
 
+  /** Index of the first message the model saw for the latest reply, if older ones were left out. */
+  function contextStart() {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === "assistant" && m.contextFrom != null) return m.contextFrom > 0 ? m.contextFrom : -1;
+    }
+    return -1;
+  }
+
+  /** A failed reply's message; a prompt too long for the model gets a plain explanation. */
+  function failureText(err, modelId) {
+    if (err && err.code === "context_length_exceeded") {
+      const model = models.find((m) => m.id === modelId);
+      const window = model && model.context_length ? ` (${fmtInt(model.context_length)} tokens)` : "";
+      return `This message is too long for ${modelId}'s context window${window}, even with the older messages left out. Shorten it, or split it into smaller parts.`;
+    }
+    return (err && err.message) || "The phone stopped with an error.";
+  }
+
+  // ---- context settings (in the phone panel) ----
+
+  function renderContext() {
+    const info = $("ctxInfo");
+    info.textContent = "";
+    const model = models.find((m) => m.id === $("model").value);
+    kv(info, "Model's window", model && model.context_length ? fmtInt(model.context_length) + " tokens" : "Not reported");
+    const last = [...messages].reverse().find((m) => m.stats && m.stats.ctxWindow && m.stats.ctxUsed);
+    if (last) {
+      const f = last.stats.ctxUsed / last.stats.ctxWindow;
+      kv(info, "Last prompt", (last.stats.ctxExact ? "" : "≈") + fmtInt(last.stats.ctxUsed) + " tokens");
+      bar(info, f, f > 0.85 ? "warn" : null);
+    }
+    $("ctxMode").value = ctxPrefs.mode;
+    $("ctxTurns").value = ctxPrefs.turns;
+    $("ctxTurnsRow").hidden = ctxPrefs.mode !== "turns";
+    $("ctxNote").textContent = ctxPrefs.mode === "turns"
+      ? "Older turns aren't sent. Replies come faster, but the model forgets the start of the chat."
+      : model && model.context_length
+        ? "When the chat gets longer than the window, the phone leaves out the oldest messages and a line shows where the model's view begins."
+        : "This phone doesn't report its window yet, so long chats are shortened here. Update LocalLM on your phone.";
+  }
+  $("ctxMode").addEventListener("change", () => {
+    ctxPrefs.mode = $("ctxMode").value === "turns" ? "turns" : "fit";
+    store.set("context", ctxPrefs);
+    renderContext();
+  });
+  $("ctxTurns").addEventListener("change", () => {
+    const n = Math.round(Number($("ctxTurns").value));
+    ctxPrefs.turns = n >= 1 && n <= 50 ? n : 10;
+    store.set("context", ctxPrefs);
+    renderContext();
+  });
+  $("model").addEventListener("change", renderContext);
+
   const res401 = (msg) => typeof msg === "string" && /API key/i.test(msg);
 
   $("send").addEventListener("click", () => running ? running.abort() : send());
   $("newChat").addEventListener("click", () => {
     if (running) running.abort();
     messages = []; store.set("messages", messages); render(); $("input").focus();
+    if (panelOpen()) loadDevice();
   });
 
   function autosize() {

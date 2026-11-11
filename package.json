@@ -1,7 +1,7 @@
 {
   "name": "lmlocal-chat",
   "productName": "LocalLM Chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Chat with the on-device models on your phone, from your computer.",
   "license": "MIT",
   "main": "main.js",
@@ -19,7 +19,7 @@
   "build": {
     "appId": "app.locallm.chat",
     "productName": "LocalLM Chat",
-    "artifactName": "LocalLM-Chat-${version}-${os}-${arch}.${ext}",
+    "artifactName": "LocalLM-Chat-${os}-${arch}.${ext}",
     "files": [
       "main.js",
       "preload.js",

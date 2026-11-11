@@ -6,14 +6,14 @@ A small desktop app for chatting with the AI models on your phone.
 
 ## Download
 
-Get the latest version from [Releases](https://github.com/cguldogan/LMLocal-Chat/releases/latest):
+Get the latest version from [Releases](https://github.com/cguldogan/LMLocal-Chat/releases/latest). These links always download the newest one:
 
 | System | File |
 |---|---|
-| Mac with Apple silicon (M1 and later) | `LocalLM-Chat-…-mac-arm64.dmg` |
-| Mac with Intel | `LocalLM-Chat-…-mac-x64.dmg` |
-| Windows | `LocalLM-Chat-…-win-x64.exe` (or `…-win-arm64.exe` for ARM PCs) |
-| Linux | `LocalLM-Chat-…-linux-x86_64.AppImage`, or `…-linux-amd64.deb` for Debian and Ubuntu (`arm64` versions too) |
+| Mac with Apple silicon (M1 and later) | [`LocalLM-Chat-mac-arm64.dmg`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-mac-arm64.dmg) |
+| Mac with Intel | [`LocalLM-Chat-mac-x64.dmg`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-mac-x64.dmg) |
+| Windows | [`LocalLM-Chat-win-x64.exe`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-win-x64.exe), or [`LocalLM-Chat-win-arm64.exe`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-win-arm64.exe) for ARM PCs |
+| Linux | [`LocalLM-Chat-linux-x86_64.AppImage`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-linux-x86_64.AppImage), or [`LocalLM-Chat-linux-amd64.deb`](https://github.com/cguldogan/LMLocal-Chat/releases/latest/download/LocalLM-Chat-linux-amd64.deb) for Debian and Ubuntu (`arm64` versions too) |
 
 ### First launch
 
@@ -21,7 +21,7 @@ The app isn't signed with an Apple or Microsoft certificate yet, so your compute
 
 - **Mac:** open the app once, and macOS says it can't verify it. Go to **System Settings ▸ Privacy & Security**, scroll down, and click **Open Anyway** next to LocalLM Chat.
 - **Windows:** if SmartScreen says "Windows protected your PC", click **More info ▸ Run anyway**.
-- **Linux:** make the AppImage executable (`chmod +x LocalLM-Chat-*.AppImage`), then run it.
+- **Linux:** make the AppImage executable (`chmod +x LocalLM-Chat-linux-*.AppImage`), then run it.
 
 ## Connect to your phone
 
